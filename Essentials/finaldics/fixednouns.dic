@@ -1,4 +1,4 @@
-11432
+﻿11432
 a/languages M to Z/SINGNOUN-letter a
 A/SINGNOUN-letter a
 abadissa/SINGNOUNF-abbess
@@ -4013,7 +4013,7 @@ kfis/SINGNOUN-suppressing
 kfuf/PLUNOUN-palms of the hand; or the inners part of the hand
 kibx/SINGNOUNM-ram
 kies/SINGNOUNM-glass, cup
-kif/SINGNOUNM-how or as soon as
+kif/ADVERB-how or as soon as
 kifsa/SINGNOUNF-an eclipse
 kifsiet/PLUNOUN-eclipses
 kikk/SINGNOUNM-kick
@@ -6659,7 +6659,7 @@ qattus imraħħam/SINGNOUNM-marbled cat
 qattus rasu ċatta/SINGNOUNM-flat-headed cat
 qattus saqajh suwed/SINGNOUNM-black-footed cat
 qattus tat-tikek lewn is-sadid/SINGNOUNM-rusty-spotted cat
-qattus/SINGNOUNM-cat  one's way of thinking
+qattus/SINGNOUNM-cat; one's way of thinking
 qattusa/SINGNOUNF-female cat
 qawl/SINGNOUNM-proverb or talk, speech
 qawmien/SINGNOUNM-the act of standing up, rising, or awaking or resurrection
@@ -6859,7 +6859,7 @@ qtajra/SINGNOUNF-a small drop
 qtajriet/PLUNOUN-smalls drop
 qtar/PLUNOUN-drops or smalls quantity
 qtari/PLUNOUN-drops or smalls quantity
-qtates/PLUNOUN-cats one's way of thinking
+qtates/PLUNOUN-cats; one's way of thinking
 qtigħ il-qalb/SINGNOUN-despair, desperation
 qtigħ/SINGNOUN-the act of cutting
 qtil/SINGNOUNM-killing, murder, slaughter
@@ -10663,6 +10663,7 @@ zuntieri/PLUNOUN-parvises or churchyards
 Ġorġjan/SINGNOUNM-Georgian or Georgian
 Ġorġjani/PLUNOUN-Georgians or Georgians
 ġostra/SINGNOUNF-joust, jousting
+ġost/SINGNOUNM-pleasure, delight, fun
 ġostri/PLUNOUN-jousts, jousting
 ġradijiet/PLUNOUN-grasshoppers; locust
 ġrajja/SINGNOUNF-event; occurrence; something that happens
@@ -11424,3 +11425,4 @@ zuntieri/PLUNOUN-parvises or churchyards
 żwieġ/SINGNOUNM-marriage (corrected syntax from raw source error)
 żwiġijiet/PLUNOUN-marriages
 żġieġ/SINGNOUN-glass
+

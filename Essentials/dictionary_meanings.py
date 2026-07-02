@@ -55,7 +55,7 @@ VERB_FORM_CLASS_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 
-VERB_TENSES = {"IMP", "PERF", "MPERF"}
+VERB_TENSES = {"IMP", "PERF", "MPERF", "ACTPAR"}
 SUBJECT_PRONOUNS = {
     "1S": "I",
     "2S": "you",
