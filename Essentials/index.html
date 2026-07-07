@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -231,7 +231,7 @@
         button {
             min-height: 40px;
             border: 1px solid #cf3d1e;
-            border-radius: 999px;
+            border-radius: 8px;
             padding: 0 16px;
             background: #cf3d1e;
             color: white;
@@ -272,7 +272,7 @@
             min-height: 24px;
             flex: 0 0 auto;
             border: 1px solid #aeb9c8;
-            border-radius: 999px;
+            border-radius: 6px;
             padding: 2px 10px;
             color: #5d6875;
             background: #f8fafc;
@@ -291,6 +291,15 @@
             border-color: #aeb9c8;
             color: #5d6875;
             background: #f8fafc;
+        }
+
+        .version-tag {
+            font-size: 0.45em;
+            font-style: italic;
+            color: #7b8794;
+            font-weight: normal;
+            margin-left: 10px;
+            vertical-align: middle;
         }
 
         .loading-bar {
@@ -486,10 +495,14 @@
     <main>
         <div class="top-bar">
             <button id="darkModeToggle" class="secondary" type="button">🌙 Dark Mode</button>
-            <button id="langToggle" class="secondary" type="button"><img src="https://flagcdn.com/w20/mt.png" alt="MT" style="width:18px;margin-right:6px;vertical-align:-2px;"> Aqleb għall-Malti</button>
+            <button id="langToggle" class="secondary" type="button"><img src="https://flagcdn.com/w20/mt.png" alt="MT"
+                    style="width:18px;margin-right:6px;vertical-align:-2px;"> Aqleb għall-Malti</button>
         </div>
 
-        <h1 id="pageTitle">English to Maltese Translator</h1>
+        <h1 id="pageTitle">
+            <span id="titleText">English to Maltese Translator</span>
+            <span id="versionText" class="version-tag">Alpha 0.1.0</span>
+        </h1>
         <p id="subtitle" class="subtitle">Traduttur b'regoli għal frażijiet Maltin u kuntest lokali.</p>
 
         <section class="panel">
@@ -540,6 +553,7 @@
 
     <script>
         const ENABLE_DEV_TOOLS = "REPLACE_ME_ENABLE_DEV_TOOLS" === "True";
+        const SHOW_AI_STATUS_BUTTON = false;
 
         const translations = {
             en: {
@@ -552,7 +566,7 @@
                 source: "Source text",
                 output: "Translation",
                 translate: "Translate",
-                clear: "Clear",
+                clear: "Clear all",
                 copy: "Copy",
                 swap: "Swap",
                 writeTextFirst: "Write text first.",
@@ -565,6 +579,7 @@
                 showSuggestionsOff: "Show suggestions",
                 placeholderInput: "Paste text here...",
                 placeholderResults: "Translation will appear here.",
+                versionText: "Alpha 0.1.0",
             },
             mt: {
                 htmlLang: "mt",
@@ -576,12 +591,12 @@
                 source: "Test oriġinali",
                 output: "Traduzzjoni",
                 translate: "Ittraduċi",
-                clear: "Ħassar",
-                copy: "Ikkopja",
-                swap: "Aqleb",
-                writeTextFirst: "Ikteb xi test l-ewwel.",
-                translating: "Qed nittraduċi...",
-                done: "Lest.",
+                clear: "Ħassar kollox",
+                copy: "Ikkopja r-riżultat",
+                swap: "Aqleb traduzzjoni",
+                writeTextFirst: "L-ewwel ikteb it-test tiegħek.",
+                translating: "Traduzzjoni fil-progress...",
+                done: "Bil-lest.",
                 copied: "Ikkupjat.",
                 failed: "It-traduzzjoni falliet.",
                 useSuggestion: "Uża din",
@@ -589,6 +604,7 @@
                 showSuggestionsOff: "Uri suġġerimenti",
                 placeholderInput: "Itfa' test bil-Malti hawn...",
                 placeholderResults: "Ir-riżultat se jidher hawn.",
+                versionText: "Alfa 0.1.0",
             },
         };
 
@@ -604,6 +620,9 @@
         const darkModeToggle = document.getElementById("darkModeToggle");
         const status = document.getElementById("status");
         const aiStatus = document.getElementById("aiStatus");
+        if (!SHOW_AI_STATUS_BUTTON) {
+            aiStatus.style.display = "none";
+        }
         const loadingBar = document.getElementById("loadingBar");
 
         let latestTranslation = "";
@@ -628,7 +647,8 @@
         function applyLanguage() {
             const labels = translations[currentLang];
             document.documentElement.lang = labels.htmlLang;
-            document.getElementById("pageTitle").textContent = labels.title;
+            document.getElementById("titleText").textContent = labels.title;
+            document.getElementById("versionText").textContent = labels.versionText;
             document.getElementById("subtitle").textContent = labels.subtitle;
             document.getElementById("sourceLabel").textContent = labels.source;
             document.getElementById("outputLabel").textContent = labels.output;
@@ -881,4 +901,3 @@
 </body>
 
 </html>
-

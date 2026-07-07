@@ -18,7 +18,8 @@ class AITranslationReview:
 
 
 def ai_enabled() -> bool:
-    return os.getenv("TRANSLATOR_AI_ENABLED", "").strip().casefold() in TRUE_VALUES
+    # Hardcoded to False to turn the AI off
+    return False
 
 
 def _gemini_key() -> str:

@@ -1,0 +1,15 @@
+# Netlify Configuration File
+# Place this in the root directory of your GitHub repository.
+# Set your Netlify Build Publish Directory to "Essentials"
+
+[[redirects]]
+  from = "/translate"
+  to = "https://YOUR_CLOUD_RUN_SERVICE_URL/translate"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "https://YOUR_CLOUD_RUN_SERVICE_URL/health"
+  status = 200
+  force = true

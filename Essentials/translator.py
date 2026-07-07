@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -455,9 +455,9 @@ class MalteseTranslator:
             line = f"{maltese}/SINGNOUN-{english}"
             self._add_lexical_record(english, maltese, line, "manual_lexical_overrides", gloss_index=-1)
             pos = "noun"
-            if english in {"little", "small", "large", "green", "fresh"}: pos = "adjective"
-            elif english in {"your", "his", "anything"}: pos = "pronoun"
-            elif english == "while": pos = "conjunction"
+            if english in {"little", "small", "large", "green", "fresh"}: pos = "adj"
+            elif english in {"your", "his", "anything"}: pos = "pron"
+            elif english == "while": pos = "conj"
             elif english == "get": pos = "verb"
             self.lex_by_gloss[normalize_text(english)].append(
                 LexicalRecord(word=maltese, gloss=english, pos=pos, source="manual_lexical_overrides", gloss_index=-1)
@@ -470,6 +470,32 @@ class MalteseTranslator:
                 source="manual_phrase_rules",
                 confidence="manual",
             )
+
+        # Copy 'understand' verb records to 'get'
+        for record in list(self.verb_by_gloss.get("understand", [])):
+            new_rec = VerbTranslationRecord(
+                word=record.word,
+                gloss="get",
+                tense=record.tense,
+                person=record.person,
+                negative=record.negative,
+                raw_tag=record.raw_tag,
+                gloss_index=record.gloss_index
+            )
+            self.verb_by_gloss["get"].append(new_rec)
+
+        # Copy 'wake up' verb records to 'wake'
+        for record in list(self.verb_by_gloss.get("wake up", [])):
+            new_rec = VerbTranslationRecord(
+                word=record.word,
+                gloss="wake",
+                tense=record.tense,
+                person=record.person,
+                negative=record.negative,
+                raw_tag=record.raw_tag,
+                gloss_index=record.gloss_index
+            )
+            self.verb_by_gloss["wake"].append(new_rec)
 
     NOUN_POSSESSIVE_SUFFIXES = {
         "head": {"my": "rasi", "your": "rasek", "his": "rasu", "her": "rasha", "its": "rasu", "our": "rasna", "their": "rashom"},
@@ -564,7 +590,9 @@ class MalteseTranslator:
                 continue
                 
             norm = normalize_text(token)
-            pos_tags = self.english_pos.get(norm, set())
+            pos_tags = set(self.english_pos.get(norm, set()))
+            if norm.endswith("ing") or norm.endswith("ed"):
+                pos_tags.add("VERB")
             
             tag_to_pos = {
                 "NOUN": "noun",
@@ -577,9 +605,7 @@ class MalteseTranslator:
             }
             
             if not pos_tags:
-                if norm.endswith("ing") or norm.endswith("ed"):
-                    pos = "verb"
-                elif norm.endswith("ly"):
+                if norm.endswith("ly"):
                     pos = "adverb"
                 else:
                     pos = "noun"
@@ -591,6 +617,9 @@ class MalteseTranslator:
                 elif "VERB" in pos_tags: preferred = "verb"
                 elif "ADJ" in pos_tags: preferred = "adjective"
                 else: preferred = tag_to_pos.get(list(pos_tags)[0], "noun")
+                
+                if norm.endswith(("ing", "ed")) and "VERB" in pos_tags:
+                    preferred = "verb"
                 
                 prev_norm = normalize_text(tokens[index - 1]) if index > 0 else ""
                 if prev_norm in {"i", "you", "he", "she", "it", "we", "they", "don't", "doesn't", "didn't", "did", "to", "will", "would", "can", "could"}:
@@ -638,14 +667,44 @@ class MalteseTranslator:
             elif p == "their": return noun_mt + "hom"
         return noun_mt
 
+    def _negate_verb_surface(self, verb_surface: str) -> str:
+        verb_surface = verb_surface.strip()
+        if not verb_surface.endswith("x"):
+            return verb_surface + "x"
+        return verb_surface
+
     def translate(self, text: str, direction: str = "en-mt") -> TranslationResult:
         direction = direction if direction in {"en-mt", "mt-en"} else "en-mt"
         if direction == "mt-en":
             return self._translate_lookup(text, direction, self.mt_to_en)
-        ai_tags = tag_sentence(text)
-        if not ai_tags:
-            ai_tags = self._tag_sentence_locally(text)
-        result = self._with_source_punctuation(self._translate_en_mt(text, ai_tags=ai_tags), text)
+        
+        sentence_splits = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+        if not sentence_splits:
+            return TranslationResult(input=text, direction="en-mt", translated_text="")
+            
+        translated_sentences = []
+        all_candidates = []
+        all_notes = []
+        
+        for sentence in sentence_splits:
+            ai_tags = tag_sentence(sentence)
+            if not ai_tags:
+                ai_tags = self._tag_sentence_locally(sentence)
+            res = self._with_source_punctuation(self._translate_en_mt(sentence, ai_tags=ai_tags), sentence)
+            translated_sentences.append(res.translated_text)
+            if res.candidates:
+                all_candidates.extend(res.candidates)
+            if res.notes:
+                all_notes.extend(res.notes)
+                
+        translated_text = " ".join(translated_sentences)
+        result = TranslationResult(
+            input=text,
+            direction=direction,
+            translated_text=translated_text,
+            candidates=all_candidates[:24],
+            notes=list(dict.fromkeys(all_notes)),
+        )
         return self._with_ai_backup(result, text, direction)
 
     def _with_ai_backup(
@@ -729,6 +788,10 @@ class MalteseTranslator:
         understand_object_result = self._translate_understand_object_question(text, normalized)
         if understand_object_result:
             return understand_object_result
+
+        feel_like_result = self._translate_feel_like_pattern(text, normalized)
+        if feel_like_result:
+            return feel_like_result
 
         like_result = self._translate_like_pattern(text, normalized)
         if like_result:
@@ -1771,9 +1834,11 @@ class MalteseTranslator:
         if pronoun == "you":
             verb_singular = self._select_verb(english_verb, tense="MPERF", person="2S", negative=False)
             verb_plural = self._select_verb(english_verb, tense="MPERF", person="2P", negative=False)
+            if not verb_singular or not verb_plural:
+                return None
 
-            verb_s = self._contextual_surface(verb_singular, previous="għandek bÅ¼onn") if verb_singular else f"[{english_verb}]"
-            verb_p = self._contextual_surface(verb_plural, previous="għandkom bÅ¼onn") if verb_plural else f"[{english_verb}]"
+            verb_s = self._contextual_surface(verb_singular, previous="għandek bÅ¼onn")
+            verb_p = self._contextual_surface(verb_plural, previous="għandkom bÅ¼onn")
 
             singular_phrase = f"għandek bÅ¼onn {verb_s}"
             plural_phrase = f"għandkom bÅ¼onn {verb_p}"
@@ -1839,7 +1904,9 @@ class MalteseTranslator:
         prefix = info["prefix"]
 
         verb_form = self._select_verb(english_verb, tense="MPERF", person=person, negative=False)
-        verb_surface = self._contextual_surface(verb_form, previous=prefix) if verb_form else f"[{english_verb}]"
+        if not verb_form:
+            return None
+        verb_surface = self._contextual_surface(verb_form, previous=prefix)
 
         translated = self._sentence_case(f"{prefix} {verb_surface}")
         return TranslationResult(
@@ -1851,6 +1918,77 @@ class MalteseTranslator:
                 f"Parsed: {pronoun} + need/needs + to + {english_verb}.",
                 f"Selected the matching {person} imperfect verb form from the verb dictionary.",
             ],
+        )
+
+    def _translate_feel_like_pattern(
+        self, original: str, normalized: str
+    ) -> TranslationResult | None:
+        match = re.fullmatch(
+            r"(i|he|she|it|we|you|they)\s+(?:(did\s+not|didn't|didnt|do\s+not|don't|dont|does\s+not|doesn't|doesnt)\s+)?feel\s+like\s+([a-z]+ing)(?:\s+(.+))?",
+            normalized,
+        )
+        if not match:
+            return None
+        
+        pronoun, aux, verb_ing, tail = match.groups()
+        english_verb = self._get_base_verb_from_ing(verb_ing)
+        if not english_verb:
+            return None
+            
+        person = {
+            "i": "1S", "he": "3SM", "she": "3SF", "it": "3SM",
+            "we": "1P", "you": "2S", "they": "3P"
+        }.get(pronoun, "1S")
+        
+        is_past = aux in {"did not", "did'nt", "didnt", "didn't"} if aux else False
+        is_neg = bool(aux)
+        
+        if is_neg:
+            if is_past:
+                have_form = {
+                    "1S": "ma kellix", "3SM": "ma kellux", "3SF": "ma kellhiex",
+                    "1P": "ma kellniex", "2S": "ma kellekx", "3P": "ma kellhomx"
+                }.get(person)
+            else:
+                have_form = {
+                    "1S": "m'għandix", "3SM": "m'għandux", "3SF": "m'għandhiex",
+                    "1P": "m'għandniex", "2S": "m'għandekx", "3P": "m'għandhomx"
+                }.get(person)
+        else:
+            if is_past:
+                have_form = {
+                    "1S": "kelli", "3SM": "kellu", "3SF": "kellha",
+                    "1P": "kellna", "2S": "kellek", "3P": "kellhom"
+                }.get(person)
+            else:
+                have_form = {
+                    "1S": "għandi", "3SM": "għandu", "3SF": "għandha",
+                    "1P": "għandna", "2S": "għandek", "3P": "għandhom"
+                }.get(person)
+                
+        verb_form = self._select_verb(english_verb, tense="MPERF", person=person, negative=False)
+        if not verb_form:
+            return None
+            
+        verb_surface = self._contextual_surface(verb_form, previous="aptit")
+        
+        tail_mt = ""
+        if tail:
+            tail_mt = self._translate_object_phrase_surface(tail)
+            if not tail_mt:
+                return None
+                
+        pieces = [have_form, "aptit", verb_surface]
+        if tail_mt:
+            pieces.append(tail_mt)
+            
+        translated = self._sentence_case(" ".join(pieces) + ".")
+        return TranslationResult(
+            input=original,
+            direction="en-mt",
+            translated_text=translated,
+            candidates=[self._candidate_payload(translated, "feel_like_rules", "manual")],
+            notes=[f"Parsed feel like pattern with {pronoun} and verb {english_verb}."],
         )
 
     def _translate_like_pattern(
@@ -2082,9 +2220,11 @@ class MalteseTranslator:
             if english_verb:
                 verb_s = self._select_verb(english_verb, tense="MPERF", person="2S", negative=False)
                 verb_p = self._select_verb(english_verb, tense="MPERF", person="2P", negative=False)
+                if not verb_s or not verb_p:
+                    return None
 
-                verb_surface_s = self._contextual_surface(verb_s, previous=can_phrase_s) if verb_s else f"[{english_verb}]"
-                verb_surface_p = self._contextual_surface(verb_p, previous=can_phrase_p) if verb_p else f"[{english_verb}]"
+                verb_surface_s = self._contextual_surface(verb_s, previous=can_phrase_s)
+                verb_surface_p = self._contextual_surface(verb_p, previous=can_phrase_p)
 
                 singular_phrase = f"{can_phrase_s} {verb_surface_s}"
                 plural_phrase = f"{can_phrase_p} {verb_surface_p}"
@@ -2160,7 +2300,9 @@ class MalteseTranslator:
 
         if english_verb:
             verb_form = self._select_verb(english_verb, tense="MPERF", person=person, negative=False)
-            verb_surface = self._contextual_surface(verb_form, previous=can_phrase) if verb_form else f"[{english_verb}]"
+            if not verb_form:
+                return None
+            verb_surface = self._contextual_surface(verb_form, previous=can_phrase)
             phrase = f"{can_phrase} {verb_surface}"
         else:
             phrase = can_phrase
@@ -2242,6 +2384,8 @@ class MalteseTranslator:
         if tail:
             object_surface, prep_surface = self._object_and_preposition_tail_surface(tail)
             tail_mt = " ".join(part for part in (object_surface, prep_surface) if part)
+        if tail and not tail_mt:
+            return None
         tail_space = f" {tail_mt}" if tail_mt else ""
 
         # Negative Pronoun Prefixes
@@ -2267,8 +2411,8 @@ class MalteseTranslator:
             if pronoun == "you":
                 verb_s = lookup_verb_form(english_verb, "2S")
                 verb_p = lookup_verb_form(english_verb, "2P")
-                if not verb_s: verb_s = f"[{english_verb}]"
-                if not verb_p: verb_p = f"[{english_verb}]"
+                if not verb_s or not verb_p:
+                    return None
 
                 if negative:
                     verb_s = f"ma {verb_s}x" if not verb_s.endswith("x") else f"ma {verb_s}"
@@ -2323,7 +2467,8 @@ class MalteseTranslator:
                 pronoun_mt = HABITUAL_PRONOUNS.get(pronoun, "Jien")
                 person = {"i": "1S", "he": "3SM", "she": "3SF", "it": "3SM", "we": "1P", "they": "3P"}.get(pronoun, "1S")
                 verb_form = lookup_verb_form(english_verb, person)
-                if not verb_form: verb_form = f"[{english_verb}]"
+                if not verb_form:
+                    return None
 
                 if negative:
                     verb_form = f"ma {verb_form}x" if not verb_form.endswith("x") else f"ma {verb_form}"
@@ -2505,8 +2650,8 @@ class MalteseTranslator:
             verb_s = lookup_verb_form(english_verb, "2S")
             verb_p = lookup_verb_form(english_verb, "2P")
 
-            if not verb_s: verb_s = f"[{english_verb}]"
-            if not verb_p: verb_p = f"[{english_verb}]"
+            if not verb_s or not verb_p:
+                return None
 
             verb_surface_s = self._contextual_surface(verb_s, previous="qed")
             verb_surface_p = self._contextual_surface(verb_p, previous="qed")
@@ -2570,7 +2715,7 @@ class MalteseTranslator:
         person = PRONOUN_PERSON_MAP.get(pronoun, "1S")
         verb_form = lookup_verb_form(english_verb, person)
         if not verb_form:
-            verb_form = f"[{english_verb}]"
+            return None
 
         verb_surface = self._contextual_surface(verb_form, previous="qed")
         if negative:
@@ -2819,6 +2964,8 @@ class MalteseTranslator:
                 verb_form = self._attach_direct_object_suffix(verb_form, obj_person)
             else:
                 object_surface = self._translate_object_phrase_surface(obj_key)
+                if not object_surface:
+                    return None
         pieces = [subject_mt, f"ma {can_form}" if is_neg else can_form, self._contextual_surface(verb_form, previous=can_form)]
         if object_surface:
             pieces.append(object_surface)
@@ -3191,6 +3338,8 @@ class MalteseTranslator:
     def _lemmatize_word(word: str) -> tuple[str, str]:
         key = normalize_text(word)
         irregulars = {
+            "a": ("omit", ""),
+            "an": ("omit", ""),
             "went": ("english", "go"),
             "came": ("english", "come"),
             "decided": ("english", "decide"),
@@ -3590,6 +3739,7 @@ class MalteseTranslator:
         translated: list[str] = []
         candidates: list[dict] = []
         notes: list[str] = []
+        negate_next_verb = False
 
         tag_by_word = {}
         if ai_tags:
@@ -3606,7 +3756,30 @@ class MalteseTranslator:
                 index += 1
                 continue
 
+            # Try to parse a multi-word noun phrase starting at index
+            # Check length from 4 down to 2
+            np_parsed = False
+            for length in (4, 3, 2):
+                if index + length <= len(tokens):
+                    phrase_tokens = tokens[index:index+length]
+                    phrase_str = " ".join(phrase_tokens)
+                    np_surface = self._noun_phrase_surface(phrase_str)
+                    if np_surface:
+                        if make_next_noun_definite:
+                            np_surface = self._definite_noun(np_surface)
+                            make_next_noun_definite = False
+                        translated.append(np_surface)
+                        index += length
+                        np_parsed = True
+                        break
+            if np_parsed:
+                continue
+
             key = normalize_text(tokens[index])
+            if key == "up" and index - 1 >= 0 and normalize_text(tokens[index - 1]) in {"wake", "woke"}:
+                index += 1
+                continue
+
             if key == "the":
                 make_next_noun_definite = True
                 index += 1
@@ -3652,6 +3825,8 @@ class MalteseTranslator:
                 continue
             elif ltype == "maltese":
                 translated_text = lval
+                if lval == "ma":
+                    negate_next_verb = True
                 if make_next_noun_definite:
                     translated_text = self._definite_noun(translated_text)
                     make_next_noun_definite = False
@@ -3711,9 +3886,20 @@ class MalteseTranslator:
                 if ai_pos == "verb" or (not ai_pos and is_verb_context and lval in self.verb_by_gloss):
                     tense = "PERF" if ai_tag and ai_tag.get("tense") == "past" else "MPERF"
                     person = (ai_tag.get("person") if ai_tag else None) or subj_person or "3SM"
-                    verb_mt = self._select_verb(ai_tag.get("lemma") if ai_tag else lval, tense=tense, person=person, negative=False)
+                    verb_neg = negate_next_verb
+                    negate_next_verb = False
+                    verb_mt = self._select_verb(ai_tag.get("lemma") if ai_tag else lval, tense=tense, person=person, negative=verb_neg)
+                    if not verb_mt:
+                        verb_mt = self._select_verb(ai_tag.get("lemma") if ai_tag else lval, tense=tense, person=person, negative=False)
+                        if verb_mt:
+                            verb_word = verb_mt.word if hasattr(verb_mt, "word") else verb_mt
+                            if verb_neg:
+                                verb_word = self._negate_verb_surface(verb_word)
+                            verb_mt = verb_word
                     if not verb_mt:
                         verb_mt = self._translate_verb_default(lval)
+                        if verb_mt and verb_neg:
+                            verb_mt = self._negate_verb_surface(verb_mt)
                     if verb_mt:
                         translated.append(verb_mt.word if hasattr(verb_mt, "word") else verb_mt)
                         if ai_pos == "verb": notes.append(f"AI tagged '{key}' as verb.")
@@ -4038,6 +4224,7 @@ class MalteseTranslator:
         pos: str,
         gender: str = "",
         number: str = "",
+        strict_pos: bool = False,
     ) -> LexicalRecord | None:
         pos_map = {
             "adjective": "adj",
@@ -4056,7 +4243,7 @@ class MalteseTranslator:
             and (not gender or record.gender == gender)
             and (not number or record.number == number)
         ]
-        if not records:
+        if not records and not strict_pos:
             # Fallback without POS restriction
             records = [
                 record

@@ -1,22 +1,47 @@
-# Use the official lightweight Python image
+# Use a lightweight official Python image
 FROM python:3.11-slim
 
-# Prevent Python from writing .pyc files and buffer outputs
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    TRANSLATOR_ENGINE=v2 \
+    TRANSLATION_BACKEND=opus_mt \
+    PORT=8080
 
-# Set the working directory inside the container
+# Set working directory
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install system dependencies needed for compiling some packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the rest of the application code
-COPY . .
+# Install PyTorch (CPU-only version to reduce Docker image size significantly)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Expose the default port Google Cloud Run uses ($PORT is injected dynamically)
+# Install other requirements
+RUN pip install --no-cache-dir \
+    transformers \
+    sentencepiece \
+    spacy \
+    flask \
+    gunicorn
+
+# Pre-download the Hugging Face translation model during build phase
+# This bakes the model weights directly into the container image so there is no startup download delay.
+RUN python -c "from transformers import MarianMTModel, MarianTokenizer; \
+    MarianTokenizer.from_pretrained('Helsinki-NLP/opus-mt-en-mt'); \
+    MarianMTModel.from_pretrained('Helsinki-NLP/opus-mt-en-mt')"
+
+# Pre-download the spaCy English grammar model
+RUN python -m spacy download en_core_web_sm
+
+# Copy the application code into the container
+COPY Essentials/ /app/Essentials/
+COPY translator_v2/ /app/translator_v2/
+
+# Expose port
 EXPOSE 8080
 
-# Run the app using Gunicorn bound to the dynamic port
-CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 0 app:app
+# Start the Flask app using Gunicorn for production-grade serving
+CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 0 Essentials.app:app

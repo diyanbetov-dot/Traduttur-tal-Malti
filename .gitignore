@@ -28,3 +28,11 @@ Thumbs.db
 # Build / recovery leftovers
 *.tmp
 *.pyc
+
+# Local model weights and HF cache
+.cache/
+hf_cache/
+*.safetensors
+*.bin
+model_weights/
+.pytest_cache/
