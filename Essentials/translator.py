@@ -3551,13 +3551,16 @@ class MalteseTranslator:
             pos="adj",
             gender=noun.gender,
             number=noun.number,
+            strict_pos=True,
         ) or self._select_lexical(
             adjective_key,
             pos="adj",
             number=noun.number,
+            strict_pos=True,
         ) or self._select_lexical(
             adjective_key,
             pos="adj",
+            strict_pos=True,
         )
 
     @staticmethod

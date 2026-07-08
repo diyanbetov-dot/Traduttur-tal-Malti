@@ -625,7 +625,9 @@
         }
         const loadingBar = document.getElementById("loadingBar");
 
+        const TRANSLATE_TIMEOUT_MS = 120000;
         let latestTranslation = "";
+        let isTranslating = false;
         let currentLang = localStorage.getItem("translatorLang") || "en";
         let showSuggestions = localStorage.getItem("showSuggestions") !== "false";
         let currentHighlights = [];
@@ -691,16 +693,28 @@
         }
 
         async function postJson(url, payload) {
-            const response = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                throw new Error(data.error || t("failed"));
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), TRANSLATE_TIMEOUT_MS);
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal,
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || t("failed"));
+                }
+                return data;
+            } catch (error) {
+                if (error && error.name === "AbortError") {
+                    throw new Error("The translation request timed out. Please try a shorter sentence or wait for the service to finish warming up.");
+                }
+                throw error;
+            } finally {
+                window.clearTimeout(timeoutId);
             }
-            return data;
         }
 
         function closePopovers(except = null) {
@@ -808,6 +822,9 @@
         // Details section removed as requested
 
         async function translate() {
+            if (isTranslating) {
+                return;
+            }
             const text = sourceText.value.trim();
             if (!text) {
                 translatedText.textContent = "";
@@ -815,6 +832,7 @@
                 return;
             }
 
+            isTranslating = true;
             setLoading(true);
             setStatus(t("translating"));
 
@@ -832,6 +850,7 @@
                 renderTranslatedOutput("", []);
                 setStatus(error.message || t("failed"), "error");
             } finally {
+                isTranslating = false;
                 setLoading(false);
             }
         }
