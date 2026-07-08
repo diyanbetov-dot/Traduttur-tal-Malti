@@ -9,13 +9,7 @@ COPY requirements-core.txt requirements-neural.txt ./
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-core.txt -r requirements-neural.txt
 
 # Download OPUS-MT model weights (Helsinki-NLP/opus-mt-en-mt) at build time
-RUN python -c "
-from transformers import MarianMTModel, MarianTokenizer
-model='Helsinki-NLP/opus-mt-en-mt'; out='/models/opus-mt-en-mt'
-tok=MarianTokenizer.from_pretrained(model)
-mt=MarianMTModel.from_pretrained(model)
-tok.save_pretrained(out); mt.save_pretrained(out)
-"
+RUN python -c "from transformers import MarianMTModel, MarianTokenizer; model='Helsinki-NLP/opus-mt-en-mt'; out='/models/opus-mt-en-mt'; tok=MarianTokenizer.from_pretrained(model); mt=MarianMTModel.from_pretrained(model); tok.save_pretrained(out); mt.save_pretrained(out)"
 
 # Download spaCy English model at build time so there is zero network I/O at runtime
 RUN python -m spacy download en_core_web_sm
