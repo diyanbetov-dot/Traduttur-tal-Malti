@@ -39,3 +39,6 @@ model_weights/
 
 # Generated lexicon binary cache (rebuilt at Docker build time)
 lexicon_db.pkl
+
+# Temporary test scripts and test data
+scratch/
