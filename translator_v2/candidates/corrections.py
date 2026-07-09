@@ -213,7 +213,7 @@ def apply_candidate_corrections(
                 text = new_text
                 corrections_applied.append(f"corrected verb '{wrong_verb}' to '{correct_surface}'")
 
-    # 4. Alarm Went Off Correction
+    # 5. Alarm Went Off Correction
     if sentence.parser_available:
         # Find any verb "go" with a particle "off"
         go_off_verbs = []

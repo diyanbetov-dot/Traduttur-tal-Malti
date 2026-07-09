@@ -43,6 +43,31 @@ def _clean_word(word: str) -> str:
     return cleaned
 
 
+def _is_noun_context(word: str, full_text: str) -> bool:
+    """Return True if *word* appears in *full_text* exclusively after a Maltese
+    definite-article or preposition hyphen prefix (e.g. 'il-', 'd-', 'mid-').
+    Such words are unambiguously nouns and must never be treated as verbs.
+    Words that appear BOTH with and without a prefix (ambiguous) are not
+    suppressed — only words that appear *only* in noun positions are.
+    """
+    # Build a pattern that matches the word preceded by an article/prep prefix
+    noun_pos_pattern = re.compile(
+        r"(?:^|(?<=\s))(?:il|l|ix|iċ|iż|ir|is|in|im|it|id|għal|fuq|minn|wara|qabel|bejn|ħdejn|għand|bi|fi|ta|ma|sa|mid|bid|fid|ġod|had)\s*-\s*"
+        + re.escape(word)
+        + r"\b",
+        re.IGNORECASE,
+    )
+    # Pattern that matches the word in a standalone/verb position (not preceded by prefix)
+    standalone_pattern = re.compile(
+        r"(?:^|(?<=\s))" + re.escape(word) + r"\b",
+        re.IGNORECASE,
+    )
+    noun_positions = noun_pos_pattern.findall(full_text)
+    standalone_positions = standalone_pattern.findall(full_text)
+    # It is a noun context when ALL occurrences are after a prefix
+    return bool(noun_positions) and len(noun_positions) >= len(standalone_positions)
+
+
 def source_verb_lemmas(sentence: ParsedSentence) -> set[str]:
     """Return English source lemmas that can license Maltese verb correction."""
     if not sentence.parser_available:
@@ -223,6 +248,12 @@ def validate_subject_verb_agreement(
             source_words = {t.lemma.lower() for t in sentence.tokens}
             if "give" not in source_words:
                 continue
+
+        # General noun-context guard: if this word appears only after a Maltese
+        # article/preposition prefix (il-, d-, mid-, etc.) it is unambiguously
+        # a noun — suppress the verb check entirely, for any word universally.
+        if _is_noun_context(clean_word, maltese_text):
+            continue
 
         paradigms = db.lookup_verb(clean_word)
         if not paradigms:
