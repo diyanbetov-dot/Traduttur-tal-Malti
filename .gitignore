@@ -37,8 +37,8 @@ hf_cache/
 model_weights/
 .pytest_cache/
 
-# Generated lexicon binary cache (rebuilt at Docker build time)
-lexicon_db.pkl
+# Generated lexicon binary caches (rebuilt at Docker build time)
+*.pkl
 
 # Temporary test scripts and test data
 scratch/

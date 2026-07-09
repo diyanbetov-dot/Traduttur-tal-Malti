@@ -105,8 +105,9 @@ class TranslationPipeline:
 
                 if self._config.uses_rules:
                     rules_started = time.perf_counter()
-                    from translator_v2.maltese.lexicon.database import get_lexicon_db  # noqa: PLC0415
+                    from translator_v2.maltese.lexicon.database import get_lexicon_db, get_noun_db  # noqa: PLC0415
                     get_lexicon_db()
+                    get_noun_db()
                     from translator_v2.maltese.lexicon import terminology  # noqa: F401, PLC0415
                     from translator_v2.maltese.validation import agreement  # noqa: F401, PLC0415
                     from translator_v2.candidates import corrections  # noqa: F401, PLC0415
@@ -204,10 +205,12 @@ class TranslationPipeline:
                 validate_coordination_agreement,
                 validate_subject_verb_agreement,
                 validate_tense_aspect_agreement,
+                validate_vocabulary_senses,
             )
             warnings.extend(validate_coordination_agreement(text, sentence))
             warnings.extend(validate_subject_verb_agreement(text, sentence))
             warnings.extend(validate_tense_aspect_agreement(text, sentence))
+            warnings.extend(validate_vocabulary_senses(text, sentence))
 
 
         source_words = {w.lower() for w in source_text.split() if len(w) > 3}
@@ -238,12 +241,40 @@ class TranslationPipeline:
                 ))
         return warnings
 
-    def _rerank(self, candidates: list[TranslationCandidate], constraints: TranslationConstraints) -> list[TranslationCandidate]:
+
+    def _has_go_activity_source(self, sentence: ParsedSentence) -> bool:
+        """Detect English go + gerund/activity structures, e.g. went swimming."""
+        for token in sentence.tokens:
+            if token.upos == "VERB" and token.lemma == "go":
+                children = sentence.get_children(token.i)
+                if any(
+                    child.upos == "VERB"
+                    and child.dep in {"xcomp", "advcl", "conj"}
+                    and child.morph.get("VerbForm") == "Part"
+                    for child in children
+                ):
+                    return True
+        return False
+
+    def _go_activity_preference(self, candidate_text: str, sentence: ParsedSentence) -> int:
+        if not self._has_go_activity_source(sentence):
+            return 0
+        words = {w.strip(".,?!;:'\"").lower() for w in candidate_text.split()}
+        go_forms = {"mort", "mar", "marret", "morna", "marru", "mortu"}
+        start_forms = {"bdejt", "beda", "bdiet", "bdejna", "bdew", "bdejtu"}
+        if words & go_forms:
+            return 2
+        if words & start_forms:
+            return -1
+        return 0
+
+    def _rerank(self, candidates: list[TranslationCandidate], constraints: TranslationConstraints, sentence: ParsedSentence) -> list[TranslationCandidate]:
         def key(c: TranslationCandidate):
             errors = sum(1 for w in c.validation_warnings if w.severity == "error")
             warnings_count = sum(1 for w in c.validation_warnings if w.severity == "warning")
+            preference = self._go_activity_preference(c.text, sentence)
             score = -(c.model_score or 0.0)
-            return (errors, warnings_count, score)
+            return (errors, warnings_count, -preference, score)
 
         sorted_candidates = sorted(candidates, key=key)
         for rank, c in enumerate(sorted_candidates):
@@ -321,7 +352,7 @@ class TranslationPipeline:
         timings["rule_validation_ms"] = round((time.perf_counter() - step) * 1000, 2)
 
         step = time.perf_counter()
-        ranked = self._rerank(translation_candidates, constraints)
+        ranked = self._rerank(translation_candidates, constraints, sentence)
         timings["rerank_ms"] = round((time.perf_counter() - step) * 1000, 2)
 
         best_candidate = ranked[0] if ranked else None
@@ -377,5 +408,8 @@ class TranslationPipeline:
         cleaned = re.sub(r"\s+([.,?!;:])", r"\1", cleaned)
         if self._config.uses_rules:
             from translator_v2.maltese.lexicon.terminology import apply_terminology_overrides  # noqa: PLC0415
+            from translator_v2.maltese.orthography import apply_final_orthography  # noqa: PLC0415
+
             cleaned = apply_terminology_overrides(cleaned)
+            cleaned = apply_final_orthography(cleaned)
         return cleaned

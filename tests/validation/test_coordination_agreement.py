@@ -49,3 +49,18 @@ def test_does_not_treat_barra_as_wrong_verb():
 
     warnings = validate_subject_verb_agreement("Huma kienu qed jistennew barra.", sentence)
     assert not [w for w in warnings if "barra" in w.message]
+
+def test_source_verbs_gate_house_and_kif_homographs():
+    from translator_v2.maltese.validation.agreement import validate_subject_verb_agreement
+    from translator_v2.source_analysis.models import ParsedSentence, Token
+
+    i = Token(i=0, text="I", lemma="i", upos="PRON", morph={}, dep="nsubj", head_i=2, ner="", char_start=0, char_end=1)
+    know = Token(i=2, text="know", lemma="know", upos="VERB", morph={}, dep="ROOT", head_i=2, ner="", char_start=8, char_end=12)
+    build = Token(i=5, text="build", lemma="build", upos="VERB", morph={}, dep="xcomp", head_i=2, ner="", char_start=20, char_end=25)
+    house = Token(i=7, text="house", lemma="house", upos="NOUN", morph={}, dep="obj", head_i=5, ner="", char_start=28, char_end=33)
+    sentence = ParsedSentence(text="I don't know how to build a house.", tokens=[i, know, build, house], parser_available=True)
+
+    warnings = validate_subject_verb_agreement("Ma nafx kif nibni dar.", sentence)
+    messages = "\n".join(w.message for w in warnings)
+    assert "dar" not in messages
+    assert "kif" not in messages

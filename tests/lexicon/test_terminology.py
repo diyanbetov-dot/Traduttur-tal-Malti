@@ -18,6 +18,10 @@ class TestTerminology:
         assert apply_terminology_overrides("DOWNSTAIRS") == "ISFEL"
         assert apply_terminology_overrides("downstairs") == "isfel"
 
+    def test_normalizes_bad_yesterday_surface_to_dictionary_base(self):
+        assert apply_terminology_overrides("Bieraħ mort.") == "Lbieraħ mort."
+        assert apply_terminology_overrides("bieraħ mort.") == "lbieraħ mort."
+
     def test_does_not_replace_within_other_words(self):
         # "downstairsy" should not be touched
         assert apply_terminology_overrides("downstairsy") == "downstairsy"

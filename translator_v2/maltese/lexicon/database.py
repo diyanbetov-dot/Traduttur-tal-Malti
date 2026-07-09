@@ -20,7 +20,7 @@ from Essentials.dictionary_meanings import parse_verb_payload, split_dictionary_
 logger = logging.getLogger(__name__)
 
 _CACHE_FILENAME = "lexicon_db.pkl"
-_CACHE_VERSION = 1  # bump this to invalidate all existing caches
+_CACHE_VERSION = 2  # bump this to invalidate all existing caches
 
 
 class VerbFeatures(NamedTuple):
@@ -133,6 +133,8 @@ class LexiconDatabase:
                 line = line.strip()
                 if not line or line.isdigit():
                     continue
+                if "/" not in line:
+                    continue
 
                 surface, payload = split_dictionary_line(line)
                 if not surface or not payload:
@@ -141,6 +143,8 @@ class LexiconDatabase:
                 parsed = parse_verb_payload(payload)
                 if parsed:
                     surface_lower = surface.lower()
+                    # Normalize curly apostrophes to straight quote
+                    surface_lower = surface_lower.replace("ʼ", "'").replace("’", "'").replace("‘", "'").replace("ʻ", "'").replace("´", "'")
                     lemma_lower = str(parsed["gloss"]).lower()
                     tense = str(parsed["tense"]).upper()
                     person = str(parsed["person"]).upper()
@@ -175,9 +179,34 @@ class LexiconDatabase:
     # ------------------------------------------------------------------
 
     def lookup_verb(self, surface: str) -> list[VerbFeatures]:
-        """Return all matching morphological features for a Maltese verb form."""
+        """Return all matching morphological features for a Maltese verb form, with fallback for pronominal suffixes."""
         self.load()
-        return self._verbs.get(surface.lower(), [])
+        surface_lower = surface.lower()
+        surface_lower = surface_lower.replace("ʼ", "'").replace("’", "'").replace("‘", "'").replace("ʻ", "'").replace("´", "'")
+
+        res = self._verbs.get(surface_lower)
+        if res:
+            return res
+
+        import re  # noqa: PLC0415
+        suffixes = ["hom", "ha", "kom", "na", "ni", "ek", "k", "hu", "h", "lu", "li", "u"]
+        for suff in suffixes:
+            if surface_lower.endswith(suff):
+                base = surface_lower[:-len(suff)]
+                res = self._verbs.get(base)
+                if res:
+                    return res
+                # Check for vowel changes before final consonants (e.g. nifhim -> nifhem)
+                match = re.match(r"^(.*)i([bdfgklmnrstxz])$", base)
+                if match:
+                    base_alt = match.group(1) + "e" + match.group(2)
+                    res = self._verbs.get(base_alt)
+                    if res:
+                        return res
+                res = self._verbs.get(base + "'")
+                if res:
+                    return res
+        return []
 
     def find_verb_surface(self, lemma: str, tense: str, person: str, negative: bool = False) -> str | None:
         """Find the matching surface form of a verb by its features."""
@@ -185,8 +214,126 @@ class LexiconDatabase:
         return self._reverse_verbs.get((lemma.lower(), tense.upper(), person.upper(), negative))
 
 
-# Singleton instance accessor
+_NOUN_CACHE_FILENAME = "nouns_db.pkl"
+_NOUN_CACHE_VERSION = 2
+
+
+class NounDatabase:
+    """In-memory database caching Maltese noun genders parsed from fixednouns.dic."""
+
+    def __init__(self, finaldics_dir: Path | None = None) -> None:
+        self._dir = finaldics_dir or Path(__file__).resolve().parents[3] / "Essentials" / "finaldics"
+        self._nouns: dict[str, str] = {}  # mlt_noun -> gender (F/M)
+        self._english_to_nouns: dict[str, list[tuple[str, str]]] = {}  # eng_lemma -> [(mlt_noun, gender)]
+        self._is_loaded = False
+
+    def load(self) -> None:
+        if self._is_loaded:
+            return
+
+        dic_path = self._dir / "fixednouns.dic"
+        if not dic_path.exists():
+            return
+
+        cache_path = self._dir / _NOUN_CACHE_FILENAME
+        # Check cache freshness against the fixednouns.dic source file
+        if self._try_load_cache(cache_path, [dic_path]):
+            self._is_loaded = True
+            return
+
+        # Cache miss — parse from text and write binary cache
+        self._load_file(dic_path)
+        self._save_cache(cache_path)
+        self._is_loaded = True
+
+    def _try_load_cache(self, cache_path: Path, source_paths: list[Path]) -> bool:
+        if not cache_path.exists():
+            return False
+        cache_mtime = cache_path.stat().st_mtime
+        if any(p.stat().st_mtime > cache_mtime for p in source_paths):
+            return False
+        try:
+            with open(cache_path, "rb") as fh:
+                payload = pickle.load(fh)
+            if not isinstance(payload, dict) or payload.get("version") != _NOUN_CACHE_VERSION:
+                return False
+            self._nouns = payload["nouns"]
+            self._english_to_nouns = payload["english_to_nouns"]
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load noun cache: %s", exc)
+            return False
+
+    def _save_cache(self, cache_path: Path) -> None:
+        try:
+            payload = {
+                "version": _NOUN_CACHE_VERSION,
+                "nouns": self._nouns,
+                "english_to_nouns": self._english_to_nouns,
+            }
+            with open(cache_path, "wb") as fh:
+                pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not save noun cache: %s", exc)
+
+    def _load_file(self, path: Path) -> None:
+        import re  # noqa: PLC0415
+
+        try:
+            content = path.read_text(encoding="utf-8-sig", errors="replace")
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.isdigit():
+                    continue
+                if "/" not in line:
+                    continue
+
+                parts = line.split("/", 1)
+                mlt = parts[0].strip().lower()
+                # Normalize curly apostrophes for noun surfaces
+                mlt = mlt.replace("ʼ", "'").replace("’", "'").replace("‘", "'").replace("ʻ", "'").replace("´", "'")
+                rest = parts[1].strip()
+                if "-" not in rest:
+                    continue
+
+                subparts = rest.split("-", 1)
+                tag = subparts[0].strip().upper()
+                gloss = subparts[1].strip().lower()
+
+                gender = None
+                if "SINGNOUNF" in tag:
+                    gender = "F"
+                elif "SINGNOUNM" in tag:
+                    gender = "M"
+
+                if gender:
+                    self._nouns[mlt] = gender
+                    for g in re.split(r"[;,]+", gloss):
+                        g = g.strip()
+                        if g.startswith("a "):
+                            g = g[2:]
+                        elif g.startswith("an "):
+                            g = g[3:]
+                        g = g.strip()
+                        if g:
+                            if g not in self._english_to_nouns:
+                                self._english_to_nouns[g] = []
+                            self._english_to_nouns[g].append((mlt, gender))
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load noun file %s: %s", path, exc)
+
+    def get_gender(self, mlt_word: str) -> str | None:
+        self.load()
+        return self._nouns.get(mlt_word.lower())
+
+    def lookup_by_english(self, eng_lemma: str) -> list[tuple[str, str]]:
+        self.load()
+        return self._english_to_nouns.get(eng_lemma.lower(), [])
+
+
+# Singleton instance accessors
 _db_instance: LexiconDatabase | None = None
+_noun_db_instance: NounDatabase | None = None
 
 
 def get_lexicon_db(finaldics_dir: Path | None = None) -> LexiconDatabase:
@@ -195,3 +342,11 @@ def get_lexicon_db(finaldics_dir: Path | None = None) -> LexiconDatabase:
         _db_instance = LexiconDatabase(finaldics_dir)
         _db_instance.load()
     return _db_instance
+
+
+def get_noun_db(finaldics_dir: Path | None = None) -> NounDatabase:
+    global _noun_db_instance
+    if _noun_db_instance is None:
+        _noun_db_instance = NounDatabase(finaldics_dir)
+        _noun_db_instance.load()
+    return _noun_db_instance
