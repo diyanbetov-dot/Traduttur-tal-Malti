@@ -213,6 +213,81 @@ def apply_candidate_corrections(
                 text = new_text
                 corrections_applied.append(f"corrected verb '{wrong_verb}' to '{correct_surface}'")
 
+    # 4. Alarm Went Off Correction
+    if sentence.parser_available:
+        # Find any verb "go" with a particle "off"
+        go_off_verbs = []
+        for t in sentence.tokens:
+            if t.upos == "VERB" and t.lemma.lower() == "go":
+                children = sentence.get_children(t.i)
+                if any(child.dep == "prt" and child.lemma.lower() == "off" for child in children):
+                    go_off_verbs.append(t)
+        
+        for verb_tok in go_off_verbs:
+            subjs = [t for t in sentence.tokens if t.dep in {"nsubj", "nsubjpass"} and t.head_i == verb_tok.i]
+            if subjs:
+                subj_tok = subjs[0]
+                subj_lemma = subj_tok.lemma.lower()
+                if subj_lemma in {"alarm", "siren", "bell", "device"}:
+                    is_past = "Past" in verb_tok.morph.get("Tense", []) or verb_tok.text.lower() == "went"
+                    is_plural = "Plur" in subj_tok.morph.get("Number", [])
+                    is_feminine = subj_lemma in {"siren", "bell"}
+                    
+                    if is_past:
+                        if is_plural:
+                            correct_verb = "daqqew"
+                        elif is_feminine:
+                            correct_verb = "daqqet"
+                        else:
+                            correct_verb = "daqq"
+                    else:
+                        if is_plural:
+                            correct_verb = "jdoqqu"
+                        elif is_feminine:
+                            correct_verb = "ddoqq"
+                        else:
+                            correct_verb = "jdoqq"
+                            
+                    # Replace incorrect depart/went verbs in candidate text
+                    depart_patterns = re.compile(
+                        r"\b(telaq|telqet|telqu|mar|marret|marru|infaqa|infaqgħet|infaqgħu)\b",
+                        re.IGNORECASE
+                    )
+                    new_text, count = depart_patterns.subn(correct_verb, text)
+                    if count > 0:
+                        text = new_text
+                        corrections_applied.append(f"corrected 'go off' translation to '{correct_verb}' for subject '{subj_lemma}'")
+
+    # 5. What You Mean Correction
+    if sentence.parser_available:
+        mean_verbs = [t for t in sentence.tokens if t.upos == "VERB" and t.lemma.lower() == "mean"]
+        for verb_tok in mean_verbs:
+            subjs = [t for t in sentence.tokens if t.dep in {"nsubj", "nsubjpass"} and t.head_i == verb_tok.i]
+            if subjs:
+                subj_tok = subjs[0]
+                if subj_tok.lemma.lower() == "you":
+                    # Check if the candidate text contains "tfisser"
+                    mean_pattern = re.compile(r"\b(?:xi\s+|x['’ʼʻ´`‘]\s*)?tfisser\b", re.IGNORECASE)
+                    new_text, count = mean_pattern.subn("xi trid tgħid", text)
+                    if count > 0:
+                        text = new_text
+                        corrections_applied.append("corrected 'what you mean' idiom to 'xi trid tgħid'")
+    # 6. Last Night Correction
+    if "last night" in sentence.text.lower():
+        last_night_pattern = re.compile(
+            r"\b(?:l-)?aħħar\s+lejl\b|\blejla\s+li\s+għaddiet\b|\billejla\s+l-oħra\b",
+            re.IGNORECASE
+        )
+        def replace_last_night(m: re.Match) -> str:
+            val = m.group(0)
+            if val and val[0].isupper():
+                return "Dal-lejl"
+            return "dal-lejl"
+        new_text, count = last_night_pattern.subn(replace_last_night, text)
+        if count > 0:
+            text = new_text
+            corrections_applied.append("corrected 'last night' literal translation to 'dal-lejl'")
+
     if corrections_applied:
         # Create a new corrected candidate variant
         corrected_candidate = TranslationCandidate(

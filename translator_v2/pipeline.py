@@ -400,8 +400,8 @@ class TranslationPipeline:
         cleaned = text.strip()
         cleaned = re.sub(r"\s*-\s*", "-", cleaned)
         cleaned = re.sub(r"\s*'\s*", "'", cleaned)
-        cleaned = re.sub(r"(\w+')(\w+)", r"\1 \2", cleaned)
-        cleaned = re.sub(r"(\b[fltmbn])'\s+", r"\1'", cleaned)
+        cleaned = re.sub(r"(\w{2,}')(\w+)", r"\1 \2", cleaned)
+        cleaned = re.sub(r"(\b[fltmbnxd])'\s+", r"\1'", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned)
         if cleaned and (source[0].isupper() or source.strip().endswith((".", "?", "!")) or len(source.split()) > 1):
             cleaned = cleaned[0].upper() + cleaned[1:]

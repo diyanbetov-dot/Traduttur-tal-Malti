@@ -125,6 +125,16 @@ def apply_final_orthography(text: str) -> str:
     if not text:
         return ""
 
+    # 1. Convert x' to xi before words starting with a consonant cluster
+    def replace_x(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        word = match.group(2)
+        if _starts_with_consonant_cluster(word):
+            return ("Xi" if prefix.isupper() else "xi") + " " + word
+        return prefix + "'" + word
+
+    text = re.sub(r"\b(x)['’ʼʻ´`‘]\s*([^\W\d_]+)", replace_x, text, flags=re.IGNORECASE)
+
     def replace(match: re.Match[str]) -> str:
         word = match.group(0)
         lower = word.lower()

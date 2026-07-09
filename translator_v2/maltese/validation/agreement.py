@@ -390,4 +390,47 @@ def validate_vocabulary_senses(
                             message=f"Verb '{word}' is a metaphorical translation of 'break' (to spread), but subject '{subj_tok.lemma}' is a physical object. Expected a physical breaking verb (e.g. 'inkiser').",
                             severity="warning"
                         ))
+
+    # 2. "mean" translation check (what you mean -> xi trid tgħid)
+    mean_verbs = [t for t in sentence.tokens if t.upos == "VERB" and t.lemma.lower() == "mean"]
+    for verb_tok in mean_verbs:
+        subjs = [t for t in sentence.tokens if t.dep in {"nsubj", "nsubjpass"} and t.head_i == verb_tok.i]
+        if subjs and subjs[0].lemma.lower() == "you":
+            for word in candidate_words:
+                if "tfisser" in word:
+                    warnings.append(TranslationWarning(
+                        code="WRONG_VOCAB_SENSE",
+                        message="Literal translation 'tfisser' used for personal meaning 'what you mean'. Expected idiomatic 'trid tgħid' or 'trid tfisser'.",
+                        severity="warning"
+                    ))
+
+    # 3. "go off" translation check (alarm went off -> daqq)
+    go_off_verbs = []
+    for t in sentence.tokens:
+        if t.upos == "VERB" and t.lemma.lower() == "go":
+            children = sentence.get_children(t.i)
+            if any(child.dep == "prt" and child.lemma.lower() == "off" for child in children):
+                go_off_verbs.append(t)
+    
+    for verb_tok in go_off_verbs:
+        subjs = [t for t in sentence.tokens if t.dep in {"nsubj", "nsubjpass"} and t.head_i == verb_tok.i]
+        if subjs and subjs[0].lemma.lower() in {"alarm", "siren", "bell", "device"}:
+            for word in candidate_words:
+                if word in {"telaq", "telqet", "telqu", "mar", "marret", "marru"}:
+                    warnings.append(TranslationWarning(
+                        code="WRONG_VOCAB_SENSE",
+                        message=f"Departing verb '{word}' used for 'go off' with device subject '{subjs[0].lemma}'. Expected sounding verb (e.g. 'daqq').",
+                        severity="warning"
+                    ))
+
+    # 4. "last night" check
+    if "last night" in sentence.text.lower():
+        cand_lower = maltese_text.lower()
+        if "aħħar lejl" in cand_lower or "l-aħħar lejl" in cand_lower:
+            warnings.append(TranslationWarning(
+                code="WRONG_VOCAB_SENSE",
+                message="Literal translation 'aħħar lejl' used for 'last night'. Expected 'dal-lejl' or 'dan il-lejl'.",
+                severity="warning"
+            ))
+
     return warnings
