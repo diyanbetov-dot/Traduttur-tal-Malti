@@ -78,9 +78,49 @@ class V2Engine:
                 metadata={"direction": direction, "unsupported": True},
             )
 
-        result = self._get_pipeline().run(text)
-        result.metadata["direction"] = direction
-        return result
+        # Split multi-sentence input into individual sentences so each is
+        # translated independently. This prevents the neural model from
+        # getting confused by multiple sentences and stops rule-based
+        # corrections (verb-person, idioms, etc.) from bleeding across
+        # sentence boundaries.
+        sentences = self._split_sentences(text)
+        if len(sentences) <= 1:
+            result = self._get_pipeline().run(text)
+            result.metadata["direction"] = direction
+            return result
+
+        # Translate each sentence individually and combine results.
+        translated_parts: list[str] = []
+        all_warnings: list[TranslationWarning] = []
+        combined_metadata: dict = {}
+        for sent in sentences:
+            r = self._get_pipeline().run(sent)
+            translated_parts.append(r.translated_text)
+            all_warnings.extend(r.warnings)
+            combined_metadata = r.metadata  # keep last sentence's metadata as representative
+
+        combined_text = " ".join(translated_parts)
+        combined_metadata["direction"] = direction
+        combined_metadata["multi_sentence"] = True
+        combined_metadata["sentence_count"] = len(sentences)
+
+        return TranslationResult(
+            source_text=text,
+            translated_text=combined_text,
+            engine="v2",
+            backend=self._config.backend,
+            warnings=all_warnings,
+            metadata=combined_metadata,
+        )
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        """Split text into individual sentences on sentence-final punctuation."""
+        import re  # noqa: PLC0415
+        # Split on ., !, ? followed by whitespace (or end of string),
+        # but keep the punctuation attached to the preceding sentence.
+        parts = re.split(r"(?<=[.!?])\s+", text.strip())
+        return [p.strip() for p in parts if p.strip()]
 
     @property
     def en_to_mt(self) -> dict:
